@@ -1,4 +1,4 @@
-name: 🪟 Build Astrolo.Explorer
+name: 🪟 Build Astrolo.Explorer (.NET Framework 4.8)
 
 on:
   push:
@@ -12,40 +12,56 @@ jobs:
     runs-on: windows-2022
     
     steps:
-      # ✅ Обновлённая версия checkout
-      - name: 📥 Checkout code
+      - name: 📥 Checkout
         uses: actions/checkout@v5
 
-      # ✅ Обновлённая версия setup-msbuild
-      - name: ⚙️ Setup MSBuild
-        uses: microsoft/setup-msbuild@v3
-
-      # Восстановление пакетов
-      - name: 📦 Restore packages
-        run: nuget restore source/Astrolo.sln
-        continue-on-error: true
-
-      # Сборка проекта
-      - name: 🔨 Build Astrolo.Explorer
+      # 🔹 Игнорируем global.json, чтобы использовать совместимый .NET SDK
+      - name: 🗑️ Remove global.json (if exists)
         run: |
-          msbuild source/Astrolo.Explorer/Astrolo.Explorer.csproj `
-            /p:Configuration=Release `
-            /p:Platform="Any CPU" `
-            /t:Rebuild
+          if (Test-Path "global.json") {
+            Remove-Item "global.json" -Force
+            Write-Host "🗑️ Removed global.json to avoid SDK version conflict"
+          }
 
-      # Загрузка артефакта
-      - name: 📦 Upload build artifact
-        uses: actions/upload-artifact@v4  # ← Эта версия уже совместима
+      # 🔹 Устанавливаем .NET SDK, совместимый с .NET Framework 4.8
+      - name: ⚙️ Setup .NET SDK
+        uses: actions/setup-dotnet@v4
         with:
-          name: Astrolo-Explorer-Build
-          path: source/Astrolo.Explorer/bin/Release/net48-windows/
+          dotnet-version: '8.0.x'  # ✅ .NET 8 может собирать net48 проекты
+
+      # 🔹 Восстановление пакетов
+      - name: 📦 Restore
+        run: dotnet restore source/Astrolo.Explorer/Astrolo.Explorer.csproj
+
+      # 🔹 Сборка через dotnet (не msbuild!)
+      - name: 🔨 Build
+        run: dotnet build source/Astrolo.Explorer/Astrolo.Explorer.csproj --configuration Release --no-restore
+
+      # 🔹 Публикация
+      - name: 📤 Publish
+        run: |
+          dotnet publish source/Astrolo.Explorer/Astrolo.Explorer.csproj `
+            --configuration Release `
+            -p:DeployOnBuild=true `
+            -p:PublishProfile=FolderProfile `
+            -o publish/Astrolo
+
+      # 🔹 Если publish не сработал — копируем вручную
+      - name: 📦 Copy build output (fallback)
+        if: hashFiles('publish/Astrolo/*.exe') == ''
+        run: |
+          $src = "source/Astrolo.Explorer/bin/Release/net48-windows"
+          $dst = "publish/Astrolo"
+          if (Test-Path $src) {
+            New-Item -ItemType Directory -Force -Path $dst | Out-Null
+            Copy-Item "$src\*" -Destination $dst -Recurse -Force
+          }
+
+      # 🔹 Загрузка артефакта
+      - name: 📦 Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Astrolo-Explorer-net48
+          path: publish/Astrolo/
           retention-days: 30
           if-no-files-found: error
-
-      # Информация о сборке
-      - name: 📋 Show build info
-        run: |
-          Write-Host "`n✅ Build completed successfully!"
-          Write-Host "📁 Files created:"
-          Get-ChildItem -Path "source/Astrolo.Explorer/bin/Release/net48-windows" -File | 
-            ForEach-Object { Write-Host "  - $($_.Name)" }
