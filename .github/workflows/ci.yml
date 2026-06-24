@@ -15,7 +15,7 @@ jobs:
     steps:
       # 1. Загрузка кода с полной историей для GitVersion
       - name: 📥 Checkout
-        uses: actions/checkout@v5  # ✅ Обновлённая версия
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0 # 🔑 Нужно для GitVersion
 
@@ -37,25 +37,31 @@ jobs:
       - name: 📦 Restore
         run: dotnet restore source/Astrolo.Explorer/Astrolo.Explorer.csproj
 
-      # 5. Сборка — ✅ ПРАВИЛЬНЫЙ ПУТЬ
+      # 5. Сборка — ✅ С отключением GitVersion и одним потоком
       - name: 🔨 Build
-        run: dotnet build source/Astrolo.Explorer/Astrolo.Explorer.csproj --configuration Release --no-restore
+        run: dotnet build source/Astrolo.Explorer/Astrolo.Explorer.csproj `
+          --configuration Release `
+          --no-restore `
+          -p:GitVersion_CalculateVersion=false `
+          /m:1
 
       # 6. Тесты (если есть)
       - name: 🧪 Test
         run: dotnet test --configuration Release --no-build --verbosity normal
         continue-on-error: true
 
-      # 7. Публикация — ✅ ИСПРАВЛЕНО для .NET Framework 4.8
+      # 7. Публикация — ✅ С отключением интеграции GitVersion+GitHub Actions
       - name: 📤 Publish
         run: |
           dotnet publish source/Astrolo.Explorer/Astrolo.Explorer.csproj `
             --configuration Release `
-            -p:DeployOnBuild=true `
+            --no-build `
             -p:PublishProfile=FolderProfile `
             -p:DebugType=None `
             -p:DebugSymbols=false `
             -o publish/Astrolo
+        env:
+          GitVersion_DisableGitHubActions: true  # 🔑 Отключает запись в GITHUB_ENV
 
       # 8. Fallback: копирование из bin, если publish не сработал
       - name: 📦 Copy build output (fallback)
@@ -69,7 +75,7 @@ jobs:
             Write-Host "✅ Copied from $src to $dst"
           }
 
-      # 9. Загрузка артефакта — ✅ ПРАВИЛЬНЫЙ ПУТЬ
+      # 9. Загрузка артефакта
       - name: 📦 Upload Artifact
         uses: actions/upload-artifact@v4
         with:
