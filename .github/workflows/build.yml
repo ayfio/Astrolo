@@ -1,4 +1,4 @@
-name: 🪟 Build Astrolo.Explorer (.NET Framework 4.8)
+name: 🪟 CI Build & Publish (Astrolo)
 
 on:
   push:
@@ -8,48 +8,51 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-publish:
     runs-on: windows-2022
-    
+    timeout-minutes: 15
+
     steps:
-      # ✅ Checkout с полной историей для GitVersion
-      - name: 📥 Checkout with full history
+      - name: 📥 Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      # 🔹 Убираем global.json если он блокирует сборку
       - name: 🗑️ Remove global.json (if exists)
         run: |
           if (Test-Path "global.json") {
             Remove-Item "global.json" -Force
-            Write-Host "🗑️ Removed global.json"
           }
 
-      # 🔹 Setup .NET SDK 8
-      - name: ⚙️ Setup .NET SDK
+      - name: ⚙️ Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      # 🔹 Restore — ПРАВИЛЬНЫЙ ПУТЬ ✅
       - name: 📦 Restore
         run: dotnet restore source/Astrolo.Explorer/Astrolo.Explorer.csproj
 
-      # 🔹 Build — ПРАВИЛЬНЫЙ ПУТЬ ✅
+      # 🔹 Build с одним потоком для избежания конфликтов GitVersion
       - name: 🔨 Build
-        run: dotnet build source/Astrolo.Explorer/Astrolo.Explorer.csproj --configuration Release --no-restore
+        run: dotnet build source/Astrolo.Explorer/Astrolo.Explorer.csproj `
+          --configuration Release `
+          --no-restore `
+          /m:1
 
-      # 🔹 Publish — ПРАВИЛЬНЫЙ ПУТЬ ✅
+      - name: 🧪 Test
+        run: dotnet test --configuration Release --no-build --verbosity normal
+        continue-on-error: true
+
+      # 🔹 Publish с отключением GitVersion
       - name: 📤 Publish
         run: |
           dotnet publish source/Astrolo.Explorer/Astrolo.Explorer.csproj `
             --configuration Release `
             -p:DeployOnBuild=true `
             -p:PublishProfile=FolderProfile `
+            -p:GitVersion_CalculateVersion=false `
             -o publish/Astrolo
 
-      # 🔹 Fallback: копирование из bin
       - name: 📦 Copy build output (fallback)
         if: hashFiles('publish/Astrolo/*.exe') == ''
         run: |
@@ -58,10 +61,8 @@ jobs:
           if (Test-Path $src) {
             New-Item -ItemType Directory -Force -Path $dst | Out-Null
             Copy-Item "$src\*" -Destination $dst -Recurse -Force
-            Write-Host "✅ Copied from $src"
           }
 
-      # 🔹 Загрузка артефакта
       - name: 📦 Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -70,9 +71,8 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      # 🔹 Информация
       - name: 📋 Build Summary
         run: |
-          Write-Host "`n✅ Build completed!"
+          Write-Host "`n🎉 Build completed!"
           Get-ChildItem -Path publish/Astrolo -File -ErrorAction SilentlyContinue | 
             ForEach-Object { Write-Host "  - $($_.Name)" }
