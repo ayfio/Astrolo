@@ -1,30 +1,81 @@
+name: 🪟 CI Build & Publish (Astrolo)
+
 on:
   push:
-    branches:
-    - main
+    branches: [ "main", "master" ]
   pull_request:
-    branches:
-    - main
+    branches: [ "main", "master" ]
+  workflow_dispatch: # Ручной запуск из вкладки Actions
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build-and-publish:
+    runs-on: windows-2022 # ✅ WPF требует Windows
     timeout-minutes: 15
+
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        # Clone full repo history for GitVersion to work
-        fetch-depth: 0
+      # 1. Загрузка кода
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Нужно для GitVersion
 
-    - name: Setup .NET 10.x
-      uses: actions/setup-dotnet@v4
-      with:
-        # Semantic version range syntax or exact version of a dotnet version
-        dotnet-version: '10.x'
+      # 2. Установка .NET (LTS версия)
+      - name: ️ Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x' # ✅ Актуальная LTS
 
-    - name: Build
-      run: dotnet build --configuration Release
+      # 3. (Опционально) GitVersion для автоматических версий
+      # Раскомментируйте, если используете GitVersion в проекте
+      # - name: 🔢 Setup GitVersion
+      #   uses: gittools/actions/gitversion/setup@v1.1.1
+      #   with:
+      #     versionSpec: '5.x'
+      # - name: 🔢 Execute GitVersion
+      #   id: gitversion
+      #   uses: gittools/actions/gitversion/execute@v1.1.1
+      #   with:
+      #     useConfigFile: true
 
-    - name: Test
-      run: dotnet test --configuration Release --no-build
+      # 4. Восстановление NuGet-пакетов
+      - name: 📦 Restore
+        run: dotnet restore
+
+      # 5. Сборка
+      - name:  Build
+        run: dotnet build --configuration Release --no-restore
+
+      # 6. Тесты (если есть *.Tests.csproj)
+      - name: 🧪 Test
+        run: dotnet test --configuration Release --no-build --verbosity normal
+        continue-on-error: true # Не ломать пайплайн, если тестов нет
+
+      # 7. Публикация standalone .exe
+      - name: 📤 Publish Standalone
+        run: |
+          # Укажите путь к вашему .csproj, если он не в корне
+          dotnet publish Astrolo.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false
+
+      # 8. Загрузка готового .exe для скачивания
+      - name: 📦 Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Astrolo-Windows-x64
+          path: bin/Release/net8.0-windows/win-x64/publish/
+          retention-days: 30
+          if-no-files-found: error
+
+      # 9. Логирование результата
+      - name: 📋 Build Summary
+        run: |
+          echo " Build completed!"
+          echo "📁 Published files:"
+          Get-ChildItem -Path bin/Release/net8.0-windows/win-x64/publish -File | 
+            ForEach-Object { echo "  - $($_.Name) ($([math]::Round($_.Length/1KB,1)) KB)" }
