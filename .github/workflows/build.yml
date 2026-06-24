@@ -16,31 +16,31 @@ jobs:
       - name: 📥 Checkout with full history
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0  # 🔑 Ключевая настройка!
+          fetch-depth: 0
 
-      # 🔹 Игнорируем global.json, если он требует несуществующий SDK
+      # 🔹 Убираем global.json если он блокирует сборку
       - name: 🗑️ Remove global.json (if exists)
         run: |
           if (Test-Path "global.json") {
             Remove-Item "global.json" -Force
-            Write-Host "🗑️ Removed global.json to avoid SDK version conflict"
+            Write-Host "🗑️ Removed global.json"
           }
 
-      # 🔹 Setup .NET SDK 8 (может собирать net48 проекты)
+      # 🔹 Setup .NET SDK 8
       - name: ⚙️ Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      # 🔹 Restore NuGet пакетов
+      # 🔹 Restore — ПРАВИЛЬНЫЙ ПУТЬ ✅
       - name: 📦 Restore
         run: dotnet restore source/Astrolo.Explorer/Astrolo.Explorer.csproj
 
-      # 🔹 Сборка (GitVersion сработает благодаря fetch-depth: 0)
+      # 🔹 Build — ПРАВИЛЬНЫЙ ПУТЬ ✅
       - name: 🔨 Build
         run: dotnet build source/Astrolo.Explorer/Astrolo.Explorer.csproj --configuration Release --no-restore
 
-      # 🔹 Публикация
+      # 🔹 Publish — ПРАВИЛЬНЫЙ ПУТЬ ✅
       - name: 📤 Publish
         run: |
           dotnet publish source/Astrolo.Explorer/Astrolo.Explorer.csproj `
@@ -49,7 +49,7 @@ jobs:
             -p:PublishProfile=FolderProfile `
             -o publish/Astrolo
 
-      # 🔹 Fallback: копирование, если publish не сработал
+      # 🔹 Fallback: копирование из bin
       - name: 📦 Copy build output (fallback)
         if: hashFiles('publish/Astrolo/*.exe') == ''
         run: |
@@ -58,6 +58,7 @@ jobs:
           if (Test-Path $src) {
             New-Item -ItemType Directory -Force -Path $dst | Out-Null
             Copy-Item "$src\*" -Destination $dst -Recurse -Force
+            Write-Host "✅ Copied from $src"
           }
 
       # 🔹 Загрузка артефакта
@@ -68,3 +69,10 @@ jobs:
           path: publish/Astrolo/
           retention-days: 30
           if-no-files-found: error
+
+      # 🔹 Информация
+      - name: 📋 Build Summary
+        run: |
+          Write-Host "`n✅ Build completed!"
+          Get-ChildItem -Path publish/Astrolo -File -ErrorAction SilentlyContinue | 
+            ForEach-Object { Write-Host "  - $($_.Name)" }
