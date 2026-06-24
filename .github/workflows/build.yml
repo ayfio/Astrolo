@@ -1,0 +1,51 @@
+name: 🪟 Build Astrolo.Explorer
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:  # Позволяет запускать вручную
+
+jobs:
+  build:
+    runs-on: windows-2022
+    
+    steps:
+      # 1. Скачиваем код репозитория
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Настраиваем MSBuild (нужен для .NET Framework)
+      - name: ⚙️ Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      # 3. Восстанавливаем NuGet пакеты
+      - name: 📦 Restore packages
+        run: nuget restore source/Astrolo.sln
+        continue-on-error: true
+
+      # 4. Собираем проект
+      - name: 🔨 Build Astrolo.Explorer
+        run: |
+          msbuild source/Astrolo.Explorer/Astrolo.Explorer.csproj `
+            /p:Configuration=Release `
+            /p:Platform="Any CPU" `
+            /t:Rebuild
+
+      # 5. Загружаем результат как артефакт
+      - name: 📦 Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Astrolo-Explorer-Build
+          path: source/Astrolo.Explorer/bin/Release/net48-windows/
+          retention-days: 30
+          if-no-files-found: error
+
+      # 6. Показываем информацию о сборке
+      - name: 📋 Show build info
+        run: |
+          Write-Host "`n✅ Build completed successfully!"
+          Write-Host "📁 Files created:"
+          Get-ChildItem -Path "source/Astrolo.Explorer/bin/Release/net48-windows" -File | 
+            ForEach-Object { Write-Host "  - $($_.Name)" }
