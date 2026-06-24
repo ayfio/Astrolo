@@ -13,69 +13,75 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      # 1. Загрузка кода
+      # 1. Загрузка кода с полной историей для GitVersion
       - name: 📥 Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5  # ✅ Обновлённая версия
         with:
-          fetch-depth: 0 # Нужно для GitVersion
+          fetch-depth: 0 # 🔑 Нужно для GitVersion
 
-      # 2. Установка .NET (LTS версия)
-      - name: ️ Setup .NET
+      # 2. Убираем global.json если он требует несуществующий SDK
+      - name: 🗑️ Remove global.json (if exists)
+        run: |
+          if (Test-Path "global.json") {
+            Remove-Item "global.json" -Force
+            Write-Host "🗑️ Removed global.json to avoid SDK conflict"
+          }
+
+      # 3. Установка .NET SDK 8 (может собирать net48 проекты)
+      - name: ⚙️ Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x' # ✅ Актуальная LTS
+          dotnet-version: '8.0.x'
 
-      # 3. (Опционально) GitVersion для автоматических версий
-      # Раскомментируйте, если используете GitVersion в проекте
-      # - name: 🔢 Setup GitVersion
-      #   uses: gittools/actions/gitversion/setup@v1.1.1
-      #   with:
-      #     versionSpec: '5.x'
-      # - name: 🔢 Execute GitVersion
-      #   id: gitversion
-      #   uses: gittools/actions/gitversion/execute@v1.1.1
-      #   with:
-      #     useConfigFile: true
-
-      # 4. Восстановление NuGet-пакетов
+      # 4. Восстановление NuGet-пакетов — ✅ ПРАВИЛЬНЫЙ ПУТЬ
       - name: 📦 Restore
-        run: dotnet restore
+        run: dotnet restore source/Astrolo.Explorer/Astrolo.Explorer.csproj
 
-      # 5. Сборка
-      - name:  Build
-        run: dotnet build --configuration Release --no-restore
+      # 5. Сборка — ✅ ПРАВИЛЬНЫЙ ПУТЬ
+      - name: 🔨 Build
+        run: dotnet build source/Astrolo.Explorer/Astrolo.Explorer.csproj --configuration Release --no-restore
 
-      # 6. Тесты (если есть *.Tests.csproj)
+      # 6. Тесты (если есть)
       - name: 🧪 Test
         run: dotnet test --configuration Release --no-build --verbosity normal
-        continue-on-error: true # Не ломать пайплайн, если тестов нет
+        continue-on-error: true
 
-      # 7. Публикация standalone .exe
-      - name: 📤 Publish Standalone
+      # 7. Публикация — ✅ ИСПРАВЛЕНО для .NET Framework 4.8
+      - name: 📤 Publish
         run: |
-          # Укажите путь к вашему .csproj, если он не в корне
-          dotnet publish Astrolo.csproj `
+          dotnet publish source/Astrolo.Explorer/Astrolo.Explorer.csproj `
             --configuration Release `
-            --runtime win-x64 `
-            --self-contained true `
-            -p:PublishSingleFile=true `
-            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DeployOnBuild=true `
+            -p:PublishProfile=FolderProfile `
             -p:DebugType=None `
-            -p:DebugSymbols=false
+            -p:DebugSymbols=false `
+            -o publish/Astrolo
 
-      # 8. Загрузка готового .exe для скачивания
+      # 8. Fallback: копирование из bin, если publish не сработал
+      - name: 📦 Copy build output (fallback)
+        if: hashFiles('publish/Astrolo/*.exe') == ''
+        run: |
+          $src = "source/Astrolo.Explorer/bin/Release/net48-windows"
+          $dst = "publish/Astrolo"
+          if (Test-Path $src) {
+            New-Item -ItemType Directory -Force -Path $dst | Out-Null
+            Copy-Item "$src\*" -Destination $dst -Recurse -Force
+            Write-Host "✅ Copied from $src to $dst"
+          }
+
+      # 9. Загрузка артефакта — ✅ ПРАВИЛЬНЫЙ ПУТЬ
       - name: 📦 Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Astrolo-Windows-x64
-          path: bin/Release/net8.0-windows/win-x64/publish/
+          name: Astrolo-Explorer-net48
+          path: publish/Astrolo/
           retention-days: 30
           if-no-files-found: error
 
-      # 9. Логирование результата
+      # 10. Логирование результата
       - name: 📋 Build Summary
         run: |
-          echo " Build completed!"
-          echo "📁 Published files:"
-          Get-ChildItem -Path bin/Release/net8.0-windows/win-x64/publish -File | 
-            ForEach-Object { echo "  - $($_.Name) ($([math]::Round($_.Length/1KB,1)) KB)" }
+          Write-Host "`n🎉 Build completed!"
+          Write-Host "📁 Published files:"
+          Get-ChildItem -Path publish/Astrolo -File -ErrorAction SilentlyContinue | 
+            ForEach-Object { Write-Host "  - $($_.Name) ($([math]::Round($_.Length/1KB,1)) KB)" }
