@@ -12,10 +12,13 @@ jobs:
     runs-on: windows-2022
     
     steps:
-      - name: 📥 Checkout
+      # ✅ Checkout с полной историей для GitVersion
+      - name: 📥 Checkout with full history
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # 🔑 Ключевая настройка!
 
-      # 🔹 Игнорируем global.json, чтобы использовать совместимый .NET SDK
+      # 🔹 Игнорируем global.json, если он требует несуществующий SDK
       - name: 🗑️ Remove global.json (if exists)
         run: |
           if (Test-Path "global.json") {
@@ -23,17 +26,17 @@ jobs:
             Write-Host "🗑️ Removed global.json to avoid SDK version conflict"
           }
 
-      # 🔹 Устанавливаем .NET SDK, совместимый с .NET Framework 4.8
+      # 🔹 Setup .NET SDK 8 (может собирать net48 проекты)
       - name: ⚙️ Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'  # ✅ .NET 8 может собирать net48 проекты
+          dotnet-version: '8.0.x'
 
-      # 🔹 Восстановление пакетов
+      # 🔹 Restore NuGet пакетов
       - name: 📦 Restore
         run: dotnet restore source/Astrolo.Explorer/Astrolo.Explorer.csproj
 
-      # 🔹 Сборка через dotnet (не msbuild!)
+      # 🔹 Сборка (GitVersion сработает благодаря fetch-depth: 0)
       - name: 🔨 Build
         run: dotnet build source/Astrolo.Explorer/Astrolo.Explorer.csproj --configuration Release --no-restore
 
@@ -46,7 +49,7 @@ jobs:
             -p:PublishProfile=FolderProfile `
             -o publish/Astrolo
 
-      # 🔹 Если publish не сработал — копируем вручную
+      # 🔹 Fallback: копирование, если publish не сработал
       - name: 📦 Copy build output (fallback)
         if: hashFiles('publish/Astrolo/*.exe') == ''
         run: |
